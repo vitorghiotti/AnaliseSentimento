@@ -16,10 +16,15 @@ from sklearn.model_selection import train_test_split
 def features(sentence):
     words = sentence.lower().split()
     d={}
-    for w in words:
-        if len(w)>1:
-            d['contains(%s)' % w]=True
-        
+    excessoes = ['nao','tambem']
+    if len(words)>1:
+        for w in words:
+            if len(w)>1:
+                d['contains(%s)' % w]=True
+    elif len(words)==1:
+        if (words[0] in excessoes)==False:
+            d['contains(%s)' % words[0]]=True
+                
     return d
 #***********************************************************************************
 def processSentence(sentence):
@@ -42,6 +47,7 @@ def processSentence(sentence):
     #*************************   
     sentence = sentence.replace("tmb", "tambem")
     sentence = sentence.replace("tbm", "tambem")
+    sentence = sentence.replace(" ta ", " esta ")
     sentence = sentence.replace("vc", "voce")
     sentence = sentence.replace("sdd", "saudade")
     sentence = sentence.replace("sdds", "saudade")
@@ -49,7 +55,70 @@ def processSentence(sentence):
     sentence = sentence.replace("pfvr", "por favor")
     sentence = sentence.replace("/", " ")
     sentence = sentence.replace("numca", "nunca")
+    sentence = sentence.replace("magico", "magica")
+    sentence = sentence.replace("lindo", "linda")
+    sentence = sentence.replace("amore", "amor")
+    sentence = sentence.replace(" n ", " nao ")
+    sentence = sentence.replace("ambas", "ambos")
+    sentence = sentence.replace("tjm", "estamos juntos")
     return sentence
+#***********************************************************************************
+def processa_plural(word):
+    dict_plural ={'rs':'','atras':'','aspas':'','apos':'','antes':'','alas':'','ademais':'','quantas':'','vamos':'','eses':'','esses':'','vezes':'','damos':'','queremos':'','apenas':'','duas':'','dois':'','atraves':'','caos':'','demais':'','ambos':'','detras':'','marques':''}
+    if dict_plural.get(word)==None:
+        if re.search(r's$', word):
+
+            if re.search(r'as$', word):
+                word = re.sub(r'irmas$', 'irma', word)
+                word = re.sub(r'ais$', 'al', word)
+                word = re.sub(r'aos$', 'ao', word)
+                word = re.sub(r'as$', 'a', word)
+                
+            elif re.search(r'es$', word):
+                if re.search(r'maes$', word):
+                    word = 'maes'
+                elif re.search(r'bres$', word):
+                    word = re.sub(r'bres$', 'bre', word)
+                elif re.search(r'zes$', word):
+                    word = re.sub(r'zes$', 'z', word)
+                elif re.search(r'tres$', word):
+                    word = re.sub(r'tres$', 'tre', word)
+                elif re.search(r'ores$', word):
+                    word = re.sub(r'tres$', 'tre', word)
+                else:
+                    word = re.sub(r'oes$', 'ao', word)
+                    word = re.sub(r'aes$', 'ao', word)
+                    word = re.sub(r'gues$','gues', word)
+                    word = re.sub(r'res$', 'r', word)
+                    word = re.sub(r'es$', 'e', word)
+
+            elif re.search(r'is$', word):
+                if re.search(r'veis$', word):
+                    word = re.sub(r'veis$', 'vel', word)
+                else:
+                    word = re.sub(r'ais$', 'al', word)
+                    word = re.sub(r'zis$', 'zil', word)
+                    word = re.sub(r'eis$', 'il', word)
+
+            elif re.search(r'os$', word):
+                if re.search(r'emos$', word):
+                    word = re.sub(r'emos$', 'emos', word)
+                elif re.search(r'amos$', word):
+                    word = re.sub(r'amos$', 'amos', word)
+                elif re.search(r'armos$', word):
+                    word = re.sub(r'armos$', 'armos', word)
+                else:
+                    word = re.sub(r'ois$', 'oi', word)
+                    word = re.sub(r'os$', 'o', word)
+
+            elif re.search(r'us$', word):
+                word = re.sub(r'eus$', 'eu', word)
+                word = re.sub(r'us$', 'u', word)
+
+            else:
+                word = re.sub(r'ns$', 'm', word)
+
+    return word
 #***********************************************************************************
 #start replaceTwoOrMore
 def replaceTwoOrMore(s):
@@ -86,6 +155,7 @@ def getStopWordList(stopWordListFileName):
     stopWords.append('profunda')
     stopWords.append('voce')
     stopWords.append('to')
+    stopWords.append('tao')
     #*****************************************
     stopWords.remove('nem')
     #*****************************************
@@ -101,18 +171,20 @@ def getFeatureVector(sentence,stopWords):
         w = replaceTwoOrMore(w)
         #strip punctuation
         w = w.strip('\'"?,.')
-        if len(w)>0:
+        if len(w)>1:
             if 1!=1:
                 #print(len(w))
                 stemmer = nltk.stem.SnowballStemmer('portuguese')
                 w = stemmer.stem(w)
-        #check if the word stats with an alphabet
-        val = re.search(r"^[a-zA-Z][a-zA-Z0-9]*$", w)
-        #ignore if it is a stop word
-        if(w in stopWords or val is None):
-            continue
-        else:
-            featureVector.append(w.lower())
+            #check if the word stats with an alphabet
+            val = re.search(r"^[a-zA-Z][a-zA-Z0-9]*$", w)
+            #ignore if it is a stop word
+            if(w in stopWords or val is None):
+                continue
+            else:
+                #processa plural
+                w = processa_plural(w)
+                featureVector.append(w.lower())
         
     return featureVector
 #***********************************************************************************
@@ -127,29 +199,59 @@ def extract_features(sentence):
 def classifica(frase):
     global classifier
     global stopWords
+    global minDicLen
     dic = {}
     
-    processedTestTweet = processSentence(frase)
-    aux = " ".join((getFeatureVector(processedTestTweet,stopWords)))
+    processedTestSentence = processSentence(frase)
+    aux = " ".join((getFeatureVector(processedTestSentence,stopWords)))
     dic = features(aux)
-    if len(dic)>1:
+    if len(dic)>minDicLen:
         return classifier.classify(dic)
     else:
         return None
 #***********************************************************************************
-def Prob_false(frase,label=False):
+def Prob_Label(frase,label=False):
     global classifier
     global stopWords
+    global minDicLen
     dic = {}
     
     processedTestTweet = processSentence(frase)
     aux = " ".join((getFeatureVector(processedTestTweet,stopWords)))
     dic = features(aux)
-    if len(dic)>1:
+    if len(dic)>minDicLen:
         return classifier.prob_classify(dic).prob(label)
     else:
         return 0
 #***********************************************************************************
+def get_features(frase):
+    global classifier
+    global stopWords
+    global minDicLen
+    dic = {}
+    
+    processedTestTweet = processSentence(frase)
+    aux = " ".join((getFeatureVector(processedTestTweet,stopWords)))
+    dic = features(aux)
+    if len(dic)>minDicLen:
+        return dic
+    else:
+        return None
+#***********************************************************************************
+def carrega_base_treino():
+    conn = sqlite3.connect('tweets.sqlite')
+    cur = conn.cursor()
+    #cur.execute("SELECT * FROM tweet where tweet_id = '0' and text like '%não%inútil%'")
+    cur.execute("SELECT reacao,sentimento FROM reacao where mark_for_train=1")
+    base_treino = cur.fetchall()
+
+    for row in base_treino:
+        #print(row)
+        cur.execute("insert into tweet (tweet_id, text, sentiment) values ('0', '" + row[0] + "', '" + row[1] + "')").fetchone()
+        conn.commit()
+    
+    conn.close()
+#***********************************************************************************    
 def treinaModelo(use_nltkStopWords=True):
     #Read the sentence one by one and process it
     global stopWords
@@ -219,16 +321,18 @@ def treinaModelo(use_nltkStopWords=True):
                 else:
                     #print(featureVector, sentiment)
                     1==1
-
-                
+    conn.close()
+    
     featureVectorNonPositive = list(map(features, featureVectorNonPositive))
     featureVectorPositive = list(map(features, featureVectorPositive))
     classifier = PositiveNaiveBayesClassifier.train(featureVectorPositive,featureVectorNonPositive)
 #***********************************************************************************
 #initialize stopWords
 classifier=nltk.classify.PositiveNaiveBayesClassifier
+minDicLen = 0
 featureVectorPositive=[]
 featureVectorNonPositive=[]
 nltkStopWords = True
 stopWords = []
-treinaModelo()
+carrega_base_treino()
+#treinaModelo(True)
