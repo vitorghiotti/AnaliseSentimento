@@ -8,7 +8,6 @@ import unicodedata
 from sqlite3 import Error
 from nltk.util import ngrams 
 from nltk.classify import NaiveBayesClassifier
-from nltk.classify import PositiveNaiveBayesClassifier
 from nltk.corpus import subjectivity
 from nltk.corpus import stopwords
 from nltk.sentiment.util import *
@@ -21,8 +20,8 @@ lst_replace = None
 lst_stopw = None
 lst_base_treino = None
 lst_add_base_treino = None
-featureVectorPositive = []
-featureVectorNonPositive = []
+featureVectorBase = []
+featureList=[]
 
 conn = None
 #*******************************************************************************
@@ -202,6 +201,8 @@ def getFeatureVector(sentence,stopWords):
     return featureVector
 #***********************************************************************************
 def extract_features(sentence):
+    global featureList
+    
     sentence_words = set(sentence)
     features = {}
     for word in featureList:
@@ -224,16 +225,14 @@ def classifica(frase):
     #print(frase)
     frase = word_grams(frase,ngram)
     #print(frase)
-    frase = " ".join(frase)
-    #print(frase)
-    dic = features(frase)
+    dic = extract_features(frase)
     #print(dic)
-    if len(dic)>minDicLen:
+    if len(frase)>minDicLen:
         return classifier.classify(dic)
     else:
-        return None
+        return 0
 #***********************************************************************************
-def Prob_Label(frase,label=False):
+def Prob_Label(frase,label):
     global classifier
     global stopWords
     global minDicLen
@@ -244,9 +243,8 @@ def Prob_Label(frase,label=False):
     frase = processSentence(frase)
     frase = getFeatureVector(frase,stopWords)
     frase = word_grams(frase,ngram)
-    frase = " ".join(frase)
-    dic = features(frase)
-    if len(dic)>minDicLen:
+    dic = extract_features(frase)
+    if len(frase)>minDicLen:
         return classifier.prob_classify(dic).prob(label)
     else:
         return 0
@@ -262,12 +260,11 @@ def get_features(frase):
     frase = processSentence(frase)
     frase = getFeatureVector(frase,stopWords)
     frase = word_grams(frase,ngram)
-    frase = " ".join(frase)
-    dic = features(frase)
-    if len(dic)>minDicLen:
-        return dic
+    dic = extract_features(frase)
+    if len(frase)>minDicLen:
+        return str(frase)
     else:
-        return None
+        return 0
 #***********************************************************************************
 def carrega_listas_from_db():
     global lst_excessoes
@@ -292,9 +289,6 @@ def carrega_listas_from_db():
     cur.execute("SELECT de,para FROM excessoes where tipo = 'sw'")
     lst_stopw = cur.fetchall()
     #************************************************************************************
-    cur.execute("SELECT reacao,sentimento FROM reacao where mark_for_train=1")
-    lst_add_base_treino = cur.fetchall()
-    #************************************************************************************
     cur.execute("SELECT * FROM tweet where tweet_id in (0,1)")
     lst_base_treino = cur.fetchall()
     
@@ -303,6 +297,11 @@ def carrega_listas_from_db():
 def add_base_treino():
     global conn
     global lst_add_base_treino
+
+    conn = sqlite3.connect('tweets.sqlite')
+    cur = conn.cursor()
+    cur.execute("SELECT reacao,sentimento FROM reacao where mark_for_train=1")
+    lst_add_base_treino = cur.fetchall()
     
     if lst_add_base_treino!=None:
         conn = sqlite3.connect('tweets.sqlite')
@@ -311,13 +310,14 @@ def add_base_treino():
             cur.execute("insert into tweet (tweet_id, text, sentiment) values ('1', '" + str(row[0]) + "', '" + str(row[1]) + "')").fetchone()
             cur.execute("update reacao set mark_for_train=2 where mark_for_train=1")
             conn.commit()
-        cnn.close()
+    
+    conn.close()
 #***********************************************************************************    
 def treinaModelo(use_nltkStopWords=True,ngrms=2,prob=0.975):
     #Read the sentence one by one and process it
     global stopWords
-    global featureVectorPositive
-    global featureVectorNonPositive
+    global featureVectorBase
+    global featureList
     global classifier
     global nltkStopWords
     global lst_base_treino
@@ -326,17 +326,18 @@ def treinaModelo(use_nltkStopWords=True,ngrms=2,prob=0.975):
     ngram = ngrms
     stopWords = []
     featureList = []   
-    featureVectorPositive=[]
-    featureVectorNonPositive=[]
+    featureVectorBase=[]
     nltkStopWords=use_nltkStopWords
 
+    add_base_treino()
+    carrega_listas_from_db()
     stopWords = getStopWordList('portuguese')
 
     # Get tweet words
     cont_neg=0
     cont_pos=0
     cont_neu=0
-    cont_max=3000
+    cont_max=5000
     item_vec_max = 1
 
     for row in lst_base_treino:
@@ -348,8 +349,9 @@ def treinaModelo(use_nltkStopWords=True,ngrms=2,prob=0.975):
                 processedSentence = processSentence(sentence)
                 featureVector = getFeatureVector(processedSentence, stopWords)
                 if len(featureVector)>item_vec_max:
+                    featureList.extend(featureVector)
                     featureVector = word_grams(featureVector,ngram)
-                    featureVectorPositive.append(" ".join(featureVector))
+                    featureVectorBase.append((featureVector, sentiment))
                     1==1
                 else:
                     #print(featureVector, sentiment)
@@ -362,8 +364,9 @@ def treinaModelo(use_nltkStopWords=True,ngrms=2,prob=0.975):
                 processedSentence = processSentence(sentence)
                 featureVector = getFeatureVector(processedSentence, stopWords)
                 if len(featureVector)>item_vec_max:
+                    featureList.extend(featureVector)
                     featureVector = word_grams(featureVector,ngram)
-                    featureVectorNonPositive.append(" ".join(featureVector))
+                    featureVectorBase.append((featureVector, sentiment))
                     1==1
                 else:
                     #print(featureVector, sentiment)
@@ -371,30 +374,30 @@ def treinaModelo(use_nltkStopWords=True,ngrms=2,prob=0.975):
 
             elif row[3] == 0 and cont_neu <= cont_max:
                 cont_neu +=1
-                sentiment = row[3]
+                sentiment = 1
                 sentence = row[2]
                 processedSentence = processSentence(sentence)
                 featureVector = getFeatureVector(processedSentence, stopWords)
                 if len(featureVector)>item_vec_max:
+                    featureList.extend(featureVector)
                     featureVector = word_grams(featureVector,ngram)
-                    featureVectorPositive.append(" ".join(featureVector))
+                    #featureVectorBase.append((featureVector, sentiment))
                     1==1
                 else:
                     #print(featureVector, sentiment)
                     1==1
     
-    featureVectorNonPositive = list(map(features, featureVectorNonPositive))
-    featureVectorPositive = list(map(features, featureVectorPositive))
-    classifier = PositiveNaiveBayesClassifier.train(featureVectorPositive,featureVectorNonPositive,prob)
+    featureList = list(set(featureList))
+    training_set = nltk.classify.util.apply_features(extract_features, featureVectorBase)
+    classifier = nltk.NaiveBayesClassifier.train(training_set)
 #***********************************************************************************
-classifier=nltk.classify.PositiveNaiveBayesClassifier
+classifier=nltk.NaiveBayesClassifier
 
 carrega_listas_from_db()
 add_base_treino()
 ngram = 2
 minDicLen = 0
-featureVectorPositive=[]
-featureVectorNonPositive=[]
+featureVectorBase=[]
 nltkStopWords = True
 stopWords = []
 #carrega_base_treino()
