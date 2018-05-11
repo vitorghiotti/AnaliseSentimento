@@ -9,7 +9,7 @@ class Reacao(db.Entity):
     id_fonte = orm.Required(int)
     reacao = orm.Required(str)
     sentimento = orm.Required(int)
-    datatime_reacao = orm.Required(float)
+    datatime_reacao = orm.Required(str)
     identificador_fonte = orm.Required(str)
 
 db.bind('sqlite', 'tweets.sqlite', create_db=True)

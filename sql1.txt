@@ -1,0 +1,3 @@
+SELECT *
+  FROM reacao
+ WHERE date_classificacao like '2018-05-05 23%' and sentimento=1
